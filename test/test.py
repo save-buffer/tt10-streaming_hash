@@ -5,6 +5,35 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
 
+class MyHash:
+    def __init__(self):
+        self.cur = 0x42
+
+    def add_byte(self, val):
+        combine = self.cur ^ val
+        mix = ((combine << 4) | (combine >> 4)) & 0xFF
+        self.cur = combine ^ mix
+
+
+async def verify_one_byte(dut, expected, byte):
+    if isinstance(byte, str):
+        assert len(byte) == 1
+        byte = ord(byte)
+
+    dut.ui_in.value = int(byte)
+    expected.add_byte(int(byte))
+    await ClockCycles(dut.clk, 2)
+    assert dut.uo_out.value == expected.cur
+
+async def verify_one_byte_nochange(dut, expected, byte):
+    if isinstance(byte, str):
+        assert len(byte) == 1
+        byte = ord(byte)
+
+    dut.ui_in.value = int(byte)
+    await ClockCycles(dut.clk, 2)
+    assert dut.uo_out.value == expected.cur
+
 
 @cocotb.test()
 async def test_project(dut):
@@ -22,19 +51,26 @@ async def test_project(dut):
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
+    assert dut.uo_out.value == 0x42
 
     dut._log.info("Test project behavior")
 
-    # Set the input values you want to test
-    dut.ui_in.value = 20
-    dut.uio_in.value = 30
+    expected = MyHash()
 
-    # Wait for one clock cycle to see the output values
-    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = 0x01 # Enable accum
+    await verify_one_byte(dut, expected, 'h')
+    await verify_one_byte(dut, expected, 'e')
+    await verify_one_byte(dut, expected, 'l')
+    await verify_one_byte(dut, expected, 'l')
+    await verify_one_byte(dut, expected, 'o')
 
-    # The following assersion is just an example of how to check the output values.
-    # Change it to match the actual expected output of your module:
-    assert dut.uo_out.value == 50
+    dut.uio_in.value = 0x0 # Disable accum
+    await verify_one_byte_nochange(dut, expected, 'w')
+    await verify_one_byte_nochange(dut, expected, 'o')
+    await verify_one_byte_nochange(dut, expected, 'r')
+    dut.uio_in.value = 0x1 # Enable accum
+    await verify_one_byte(dut, expected, 'l')
+    await verify_one_byte(dut, expected, 'd')
 
     # Keep testing the module by changing the input values, waiting for
     # one or more clock cycles, and asserting the expected output values.
